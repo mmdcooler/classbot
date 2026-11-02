@@ -109,3 +109,10 @@ CREATE TABLE IF NOT EXISTS processed_updates (
   update_id bigint PRIMARY KEY,
   at        timestamptz NOT NULL DEFAULT now()
 );
+
+-- v2: پاسخ‌نامه استاد (اختیاری) — متن و/یا فایل
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_text      text;
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_file_id   text;
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_kind      text;
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_file_name text;
+ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_mime      text;

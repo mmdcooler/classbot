@@ -30,7 +30,10 @@ BEGIN
             'total', a.total_score, 'checklist', a.checklist,
             'attachment', CASE WHEN a.attach_file_id IS NULL THEN NULL ELSE jsonb_build_object(
                 'file_id', a.attach_file_id, 'kind', a.attach_kind,
-                'file_name', a.checklist->>'file_name', 'mime', a.checklist->>'file_mime') END),
+                'file_name', a.checklist->>'file_name', 'mime', a.checklist->>'file_mime') END,
+            'answer_text', a.answer_text,
+            'answer_file', CASE WHEN a.answer_file_id IS NULL THEN NULL ELSE jsonb_build_object(
+                'file_id', a.answer_file_id, 'kind', a.answer_kind, 'file_name', a.answer_file_name, 'mime', a.answer_mime) END),
         'parts', coalesce((SELECT jsonb_agg(jsonb_build_object('kind', p.kind, 'text', p.text, 'file_id', p.file_id,
                                    'file_name', p.file_name, 'mime', p.mime, 'file_size', p.file_size) ORDER BY p.id)
                            FROM submission_parts p WHERE p.submission_id = r.id), '[]'),

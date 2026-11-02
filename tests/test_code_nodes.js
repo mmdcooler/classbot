@@ -36,7 +36,8 @@ const job = {
   submission_id: 7, attempt: 1, student_name: 'سارا', submitted_at: '2026-11-02T20:00:00Z', max_file_mb: 20,
   models: ['google/gemini-2.5-flash', 'openai/gpt-4o-mini'],
   assignment: { id: 1, session_no: 1, title: 'بیشینه', description: null, total: 20, checklist,
-                attachment: { file_id: 'F_PDF', kind: 'document', file_name: 'q.pdf', mime: 'application/pdf' } },
+                attachment: { file_id: 'F_PDF', kind: 'document', file_name: 'q.pdf', mime: 'application/pdf' },
+                answer_text: 'کلید: O(n)', answer_file: { file_id: 'F_PHOTO', kind: 'photo', file_name: 'answer.jpg', mime: 'image/jpeg' } },
   parts: [
     { kind: 'text', text: 'جواب من' },
     { kind: 'document', file_id: 'F_DOCX', file_name: 'ans.docx' },
@@ -60,6 +61,8 @@ const ok = (c, m) => { console.log((c ? '  ✔ ' : '  ✘ ') + m); if (!c) failu
   ok(c.some((b) => b.type === 'image_url' && b.image_url.url.startsWith('data:image/jpeg;base64,')), 'photo as image_url');
   ok(texts.includes('پیچیدگی O(n) & حافظه O(1)'), 'docx text extracted (with &amp; decoded)');
   ok(texts.includes('def mx(a)'), 'code file inlined');
+  ok(texts.includes('پاسخ‌نامه استاد') && texts.includes('کلید: O(n)') && texts.includes('"teacher_answer_key_provided": true'), 'teacher answer key (text + file) sent to AI');
+  ok(texts.indexOf('پاسخ‌نامه استاد') < texts.indexOf('شروع پاسخ دانشجو'), 'answer key placed before student answer');
   ok(texts.includes('[cell 1 - code]') && texts.includes('print(x)'), 'ipynb extracted');
   ok(texts.includes('دانلود فایل «x.pdf» ناموفق'), 'missing file reported, not crashed');
   ok(calls.every((u) => !u.includes('TKN')), 'token not leaked in logs (mock)');

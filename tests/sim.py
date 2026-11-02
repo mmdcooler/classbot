@@ -114,12 +114,31 @@ out = msg(TEACH, "۱۲ ساعت"); expect(out, "چک‌لیست", "asked checkli
 expect(cb(TEACH, "cs"), "نمره کل: 20", "sample checklist shown")
 expect(msg(TEACH, "یک چیز نامفهوم"), "قابل تشخیص نیست", "bad checklist rejected")
 sample = q("SELECT checklist_sample()")[0][0]
-out = msg(TEACH, sample); expect(out, "پیش‌نمایش", "preview shown")
+out = msg(TEACH, sample); expect(out, "پاسخ‌نامه شما", "asked answer key after checklist")
+expect(msg(TEACH, document={"file_id": "Z", "file_name": "a.zip", "mime_type": "application/zip"}), "پشتیبانی نمی‌شه", "bad answer-key file rejected")
+out = msg(TEACH, "پاسخ: def mx(a): return max(a) — پیچیدگی O(n)"); expect(out, "پیش‌نمایش", "preview shown")
+expect(out, "پاسخ‌نامه: متن", "preview shows answer key")
 expect(out, "۱۲ ساعت", "deadline label 12h")
 out = cb(TEACH, "ac:y")
 expect(out, "منتشر شد و برای ۲ دانشجو", "published & 2 students notified")
 aid = q("SELECT id FROM assignments")[0][0]
 assert abs(q("SELECT extract(epoch from deadline-now())/3600 FROM assignments")[0][0] - 12) < 0.1
+
+assert q("SELECT answer_text FROM assignments")[0][0].startswith("پاسخ:"), "answer saved"
+
+step("answer key management")
+out = cb(TEACH, f"ta:{aid}"); expect(out, "پاسخ‌نامه: ✅ دارد", "asg view shows key")
+out = cb(TEACH, f"tan:{aid}"); expect(out, "برای جایگزینی", "key screen")
+out = msg(TEACH, caption="کلید جدید", photo=[{"file_id": "ANS_PH", "file_size": 9}])
+expect(out, "پاسخ‌نامه ذخیره شد", "key replaced with photo+caption")
+assert q("SELECT answer_kind, answer_text FROM assignments")[0] == ("photo", "کلید جدید")
+out = cb(TEACH, f"tanf:{aid}"); assert out[0][0] == "sendPhoto", out; print("  ✔ teacher can download key (sendPhoto)")
+expect(cb(S1, f"tanf:{aid}"), "دسترسی ندارید", "student cannot get key")
+expect(cb(S1, f"sa:{aid}"), "ارسال تکلیف", "student view")
+assert "ANS_PH" not in str(cb(S1, f"sa:{aid}")), "key not leaked to student"
+cb(TEACH, f"tan:{aid}"); out = cb(TEACH, f"ta:{aid}")
+expect(msg(TEACH, "متن تصادفی"), "کلاس‌های من", "leaving key screen clears state")
+cb(TEACH, f"tan:{aid}"); msg(TEACH, "پاسخ: def mx(a): return max(a) — پیچیدگی O(n)")
 
 step("duplicate session blocked")
 cb(TEACH, f"an:{cid}")
@@ -155,6 +174,7 @@ jobs = [r[0] for r in q("SELECT grading_claim(5)")]
 assert len(jobs) == 1, jobs
 j = jobs[0]
 print("   job parts:", [p["kind"] for p in j["parts"]], "models:", j["models"])
+assert j["assignment"]["answer_text"].startswith("پاسخ:"), "answer key in grading job"
 assert q("SELECT count(*) FROM grading_claim(5)")[0][0] == 0, "should not double-claim"
 res = {"submission_id": j["submission_id"], "ai_score": 17.5,
        "criteria": [{"id": 1, "score": 4, "comment": "کامل"}, {"id": 2, "score": 8, "comment": "درست"},
@@ -190,6 +210,14 @@ assert any(o[0] == "_excel" for o in out), out
 rows = q("SELECT report_rows(%s)", aid)[0][0]
 print("   excel cols:", rows["columns"][:6], "... rows:", len(rows["rows"]))
 assert len(rows["rows"]) == 2
+
+step("regrade all after key change")
+out = cb(TEACH, f"targ:{aid}"); expect(out, "دوباره با چک‌لیست", "regrade-all confirm")
+out = cb(TEACH, f"targy:{aid}"); expect(out, "۱ ارسال در صف", "regrade-all queued")
+j = q("SELECT grading_claim(5)")[0][0]
+q("SELECT grading_save(%s::jsonb)", json.dumps({**res, "submission_id": j["submission_id"]}))
+cb(TEACH, f"sap:{sid}")
+cb(TEACH, f"tanx:{aid}"); assert q("SELECT answer_text FROM assignments")[0][0] is None, "key deleted"
 
 step("regrade + auto mode + needs_review + failure")
 cb(TEACH, f"tcr:{cid}")  # auto

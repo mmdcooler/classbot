@@ -242,3 +242,34 @@ SELECT 'نمره کل: 20
 پاسخ نمونه:
 الگوریتم باید با یک حلقه آرایه را پیمایش کند و بیشینه را نگه دارد؛ پیچیدگی O(n) و حافظه O(1).'
 $$;
+
+-- پاسخ‌نامه استاد از یک پیام تلگرام (متن، یا فایل/عکس با کپشن)
+CREATE OR REPLACE FUNCTION parse_answer_msg(msg jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
+DECLARE doc jsonb := msg->'document'; ph jsonb := msg->'photo';
+        t text := btrim(coalesce(msg->>'text', msg->>'caption', ''));
+        ext text;
+BEGIN
+  IF char_length(t) > 3500 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'متن طولانی‌تر از ۳۵۰۰ حرفه؛ به صورت فایل PDF/Word بفرست.');
+  END IF;
+  IF doc IS NOT NULL THEN
+    ext := lower(substring(coalesce(doc->>'file_name','') FROM '\.([A-Za-z0-9]+)$'));
+    IF NOT (ext IN ('pdf','docx','png','jpg','jpeg','webp','txt','md','py','c','cpp','java','js','ipynb')
+            OR doc->>'mime_type' IN ('application/pdf','image/png','image/jpeg','image/webp')) THEN
+      RETURN jsonb_build_object('ok', false, 'error', 'فرمت فایل پشتیبانی نمی‌شه. PDF، Word (docx)، عکس یا فایل متنی/کد بفرست.');
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'answer_text', nullif(t,''), 'answer_file_id', doc->>'file_id', 'answer_kind', 'document',
+                              'answer_file_name', doc->>'file_name', 'answer_mime', doc->>'mime_type');
+  ELSIF ph IS NOT NULL THEN
+    RETURN jsonb_build_object('ok', true, 'answer_text', nullif(t,''), 'answer_file_id', ph->(jsonb_array_length(ph)-1)->>'file_id',
+                              'answer_kind', 'photo', 'answer_file_name', 'answer.jpg', 'answer_mime', 'image/jpeg');
+  ELSIF t = '' OR t LIKE '/%' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'پاسخ‌نامه رو به صورت متن، فایل PDF/Word یا عکس بفرست.');
+  END IF;
+  RETURN jsonb_build_object('ok', true, 'answer_text', t, 'answer_file_id', NULL, 'answer_kind', NULL,
+                            'answer_file_name', NULL, 'answer_mime', NULL);
+END $$;
+
+CREATE OR REPLACE FUNCTION has_answer(a assignments) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT a.answer_text IS NOT NULL OR a.answer_file_id IS NOT NULL
+$$;

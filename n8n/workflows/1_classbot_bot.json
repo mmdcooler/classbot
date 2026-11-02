@@ -9,7 +9,7 @@
         ],
         "additionalFields": {}
       },
-      "id": "138563f8-8f7e-4032-8736-f6261d9ffd46",
+      "id": "758b8f8c-2a1e-48de-b85d-8b3ecb7064e1",
       "name": "Telegram Trigger",
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.2,
@@ -23,13 +23,13 @@
           "name": "ClassBot Telegram"
         }
       },
-      "webhookId": "4ac58bbf-dd11-4c87-acc4-2144f68c5d94"
+      "webhookId": "9c5b6866-87b3-4728-82eb-7ef9758290fd"
     },
     {
       "parameters": {
         "jsCode": "// Base64-encode the Telegram update so it can be passed to SQL safely (no SQL injection possible)\nreturn $input.all().map(i => ({ json: { b64: Buffer.from(JSON.stringify(i.json), 'utf8').toString('base64') } }));"
       },
-      "id": "9d21c197-80bb-40fa-8e3d-3c64fc9b89fd",
+      "id": "42c2bda4-51e9-400d-af34-e4fa3488229f",
       "name": "Encode update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -46,7 +46,7 @@
           "queryBatching": "independently"
         }
       },
-      "id": "db5fb490-663e-4256-99c4-4c58286f55ae",
+      "id": "e1e373e6-401b-4969-8115-1b9cf15aebf1",
       "name": "Bot logic (SQL)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
@@ -65,7 +65,7 @@
       "parameters": {
         "jsCode": "// Each row carries a JSON array of Telegram actions -> one item per action\nconst out = [];\nfor (const item of $input.all()) {\n  const acts = item.json.actions || [];\n  for (const a of acts) out.push({ json: a });\n}\nreturn out;"
       },
-      "id": "af6520ae-57ba-4fcd-9e45-79b2dec3e6e7",
+      "id": "becac29e-6c1e-44ef-a4d3-a386af8433f2",
       "name": "Split actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -78,7 +78,7 @@
       "parameters": {
         "jsCode": "// Real Telegram API calls (internal actions start with \"_\")\nreturn $input.all()\n  .map((it, idx) => ({ json: it.json, binary: it.binary, pairedItem: { item: idx } }))\n  .filter(i => i.json.method && !i.json.method.startsWith('_'));"
       },
-      "id": "3e92945d-1cd1-41f4-9af5-358452f0b61c",
+      "id": "4c19c53b-7508-4b6b-ab72-f3bf2a219fbc",
       "name": "Telegram actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -104,7 +104,7 @@
           "timeout": 20000
         }
       },
-      "id": "3736d1cc-b99d-446c-b0f1-45c6be4f3d25",
+      "id": "ac167d41-3cd8-4503-b5bf-58abb6e73f97",
       "name": "Send to Telegram",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -118,7 +118,7 @@
       "parameters": {
         "jsCode": "return $input.all()\n  .map((it, idx) => ({ json: it.json, binary: it.binary, pairedItem: { item: idx } }))\n  .filter(i => i.json.method === '_excel');"
       },
-      "id": "de513492-92a9-418a-aa7e-de318ec086bf",
+      "id": "53461dbe-ac5e-41ce-aac2-484efd44eb97",
       "name": "Excel actions",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -135,7 +135,7 @@
           "queryBatching": "independently"
         }
       },
-      "id": "5d4392b7-3bae-4bcb-a9e4-e6d8aa7bd666",
+      "id": "0699b3a9-3a61-4c9f-a9d6-2252ff02701f",
       "name": "Excel data",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
@@ -154,7 +154,7 @@
       "parameters": {
         "jsCode": "// report_rows() -> one item per student with Persian column names (keeps column order)\nconst r = $input.first().json.r;\nif (!r.rows.length) return [{ json: { 'پیام': 'این کلاس هنوز دانشجویی ندارد' } }];\nreturn r.rows.map(row => {\n  const o = {};\n  r.columns.forEach((c, i) => { o[c] = row[i] === null || row[i] === undefined ? '' : row[i]; });\n  return { json: o };\n});"
       },
-      "id": "7614afe0-3f9f-48b3-ae1d-99062f9d24dd",
+      "id": "94794c56-b235-4e94-9947-3e58fff13453",
       "name": "Rows to items",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -172,7 +172,7 @@
           "sheetName": "Report"
         }
       },
-      "id": "0033a234-2cc4-4649-af59-5c9b6651b23c",
+      "id": "7ea8b95d-3677-46a5-95e1-da151b5839ec",
       "name": "Convert to Excel",
       "type": "n8n-nodes-base.convertToFile",
       "typeVersion": 1.1,
@@ -191,7 +191,7 @@
           "caption": "={{ $('Excel data').first().json.r.caption }}"
         }
       },
-      "id": "fbf9c6ec-bcbb-4adf-a929-4d115e208c03",
+      "id": "c674c1de-e5ab-4df3-a6d4-1bc9c10b4cf7",
       "name": "Send Excel",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -213,7 +213,7 @@
         "height": 220,
         "width": 420
       },
-      "id": "3945f61b-c55d-4e75-bbf8-3cc7cbd1e07d",
+      "id": "2160b92a-ac67-4eaf-b8d7-c2ed92480778",
       "name": "Note",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,

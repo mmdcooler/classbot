@@ -148,7 +148,8 @@ BEGIN
     INTO st FROM submissions WHERE assignment_id = a.id;
   t := '📝 <b>جلسه ' || fa(a.session_no::text) || ': ' || h(a.title) || E'</b>\n🏫 ' || h(c.name) || E'\n\n' ||
        '⏰ مهلت: ' || jalali(a.deadline) || ' (' || CASE WHEN a.status = 'open' AND a.deadline > now() THEN remain_text(a.deadline) || ' مانده' ELSE 'بسته شده' END || E')\n' ||
-       '🎯 نمره کل: ' || fa(a.total_score) || E'\n\n' ||
+       '🎯 نمره کل: ' || fa(a.total_score) || E'\n' ||
+       '🔑 پاسخ‌نامه: ' || CASE WHEN has_answer(a) THEN '✅ دارد' ELSE '❗️ ندارد' END || E'\n\n' ||
        '📤 ارسال شده: ' || fa(st.sent::text) || ' از ' || fa(n_st::text) || E'\n' ||
        '⏳ در صف نمره‌دهی: ' || fa(st.queue::text) || E'\n' ||
        '🟡 منتظر تأیید شما: ' || fa(st.waiting::text) || E'\n' ||
@@ -157,7 +158,8 @@ BEGIN
        CASE WHEN st.avg IS NOT NULL THEN E'\n📈 میانگین: ' || fa(round(st.avg, 2)) ELSE '' END;
   kb := jsonb_build_array(
     jsonb_build_array(btn('👥 ارسال‌ها و نمره‌ها', 'tsl:' || a.id), btn('📊 گزارش', 'tar:' || a.id)),
-    jsonb_build_array(btn('📥 خروجی اکسل', 'tax:' || a.id), btn('📋 چک‌لیست', 'tak:' || a.id)));
+    jsonb_build_array(btn('📥 خروجی اکسل', 'tax:' || a.id), btn('📋 چک‌لیست', 'tak:' || a.id)),
+    jsonb_build_array(btn(CASE WHEN has_answer(a) THEN '🔑 پاسخ‌نامه (دیدن/تغییر)' ELSE '🔑 افزودن پاسخ‌نامه' END, 'tan:' || a.id)));
   IF st.waiting > 0 THEN
     kb := kb || jsonb_build_array(jsonb_build_array(btn('✅ تأیید و اعلام همه نمره‌ها (' || fa(st.waiting::text) || ')', 'tarel:' || a.id)));
   END IF;
@@ -363,6 +365,12 @@ BEGIN
       E'هر معیار در یک خط با بارم داخل کروشه:\n<code>- [5] عنوان معیار</code>\n' ||
       E'می‌توانید «نمره کل:»، بخش «قوانین:» و «پاسخ نمونه:» هم اضافه کنید.\n\nبرای دیدن یک نمونه کامل دکمه زیر را بزنید 👇',
       jsonb_build_array(jsonb_build_array(btn('📋 نمونه چک‌لیست', 'cs')), cancel));
+  ELSIF step = 'answer' THEN
+    RETURN show(chat, mid, E'🔑 <b>پاسخ‌نامه شما (اختیاری ولی خیلی مهم)</b>\n\n' ||
+      E'جواب‌های درست رو بفرستید تا هوش مصنوعی پاسخ دانشجوها رو <b>با جواب شما مقایسه</b> کنه:\n' ||
+      E'• متن (مثلاً <code>۱-ب  ۲-د  ۳-الف</code> یا راه‌حل)\n• یا فایل PDF/Word\n• یا عکس برگه‌ی حل‌شده\n\n' ||
+      E'🔒 دانشجوها پاسخ‌نامه رو نمی‌بینن. بعداً هم از صفحه تکلیف می‌تونید اضافه یا عوضش کنید.',
+      jsonb_build_array(jsonb_build_array(btn('⏭ بدون پاسخ‌نامه', 'ak')), cancel));
   ELSIF step = 'confirm' THEN
     cl := parse_checklist(d->>'checklist_raw');
     RETURN show(chat, mid, E'👀 <b>پیش‌نمایش تکلیف</b>\n\n' ||
@@ -371,6 +379,9 @@ BEGIN
       '📝 عنوان: ' || h(d->>'title') || E'\n' ||
       '📄 صورت: ' || CASE WHEN d->>'file_id' IS NOT NULL THEN '📎 فایل پیوست + ' ELSE '' END || h(trunc_text(coalesce(d->>'desc','—'), 300)) || E'\n' ||
       '⏰ مهلت: ' || hours_label((d->>'hours')::numeric) || ' — تا ' || jalali(now() + make_interval(secs => (d->>'hours')::numeric * 3600)) || E'\n' ||
+      '🔑 پاسخ‌نامه: ' || CASE WHEN d->>'answer_file_id' IS NOT NULL THEN '📎 فایل' || CASE WHEN d->>'answer_text' IS NOT NULL THEN ' + متن' ELSE '' END
+                              WHEN d->>'answer_text' IS NOT NULL THEN 'متن (' || fa(char_length(d->>'answer_text')::text) || ' حرف)'
+                              ELSE '❗️ ندارد (AI با دانش خودش می‌سنجد)' END || E'\n' ||
       '⚙️ اعلام نمره: ' || CASE WHEN c.auto_release THEN 'خودکار' ELSE 'با تأیید شما' END || E'\n\n' ||
       E'<b>چک‌لیست:</b>\n' || checklist_text(cl) ||
       E'\n\nبعد از انتشار، به همه دانشجوهای کلاس اطلاع داده می‌شود.',

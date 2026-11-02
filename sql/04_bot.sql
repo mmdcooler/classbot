@@ -207,7 +207,13 @@ BEGIN
         RETURN jsonb_build_array(send(chat, '⚠️ ' || h(cl->>'error') || E'\n\nدوباره بفرست یا نمونه را ببین:',
                  jsonb_build_array(jsonb_build_array(btn('📋 نمونه چک‌لیست', 'cs'), btn('❌ لغو', 'ac:n')))));
       END IF;
-      d := d || jsonb_build_object('checklist_raw', msg->>'text', 'step', 'confirm');
+      d := d || jsonb_build_object('checklist_raw', msg->>'text', 'step', 'answer');
+    ELSIF k = 'answer' THEN
+      cl := parse_answer_msg(msg);
+      IF NOT (cl->>'ok')::boolean THEN
+        RETURN jsonb_build_array(send(chat, '⚠️ ' || h(cl->>'error'), jsonb_build_array(jsonb_build_array(btn('⏭ بدون پاسخ‌نامه', 'ak'), btn('❌ لغو', 'ac:n')))));
+      END IF;
+      d := d || (cl - 'ok') || jsonb_build_object('step', 'confirm');
     ELSE
       RETURN jsonb_build_array(send(chat, 'از دکمه‌های پیام قبل استفاده کنید یا /cancel را بزنید.'));
     END IF;
@@ -258,6 +264,25 @@ BEGIN
              jsonb_build_array(jsonb_build_array(btn('✅ ارسال نهایی', 'sf')),
                                jsonb_build_array(btn('🗑 پاک کردن و شروع دوباره', 'sx'), btn('⏸ بعداً', 'sp')))));
 
+  WHEN 'answer_edit' THEN
+    SELECT a2.* INTO a FROM assignments a2 JOIN classes c2 ON c2.id = a2.class_id
+     WHERE a2.id = (d->>'aid')::int AND c2.teacher_id = u.id;
+    IF a.id IS NULL THEN PERFORM set_state(u.id, NULL); RETURN jsonb_build_array(scr_denied(chat, NULL)); END IF;
+    cl := parse_answer_msg(msg);
+    IF NOT (cl->>'ok')::boolean THEN
+      RETURN jsonb_build_array(send(chat, '⚠️ ' || h(cl->>'error'), back_kb('tan:' || a.id, '❌ انصراف')));
+    END IF;
+    UPDATE assignments SET answer_text = cl->>'answer_text', answer_file_id = cl->>'answer_file_id', answer_kind = cl->>'answer_kind',
+           answer_file_name = cl->>'answer_file_name', answer_mime = cl->>'answer_mime'
+     WHERE id = a.id RETURNING * INTO a;
+    PERFORM set_state(u.id, NULL);
+    np := (SELECT count(*) FROM submissions WHERE assignment_id = a.id AND status IN ('graded','released','failed'));
+    RETURN jsonb_build_array(send(chat, '✅ پاسخ‌نامه ذخیره شد. از این به بعد ارسال‌ها با این پاسخ‌نامه سنجیده می‌شن.' ||
+      CASE WHEN np > 0 THEN E'\n\n' || fa(np::text) || ' ارسال قبلاً بدون این پاسخ‌نامه نمره گرفته‌اند. می‌خواهید دوباره نمره‌دهی شوند؟' ELSE '' END,
+      CASE WHEN np > 0 THEN jsonb_build_array(jsonb_build_array(btn('🔄 نمره‌دهی مجدد همه (' || fa(np::text) || ')', 'targ:' || a.id)),
+                                              jsonb_build_array(btn('🔙 تکلیف', 'ta:' || a.id)))
+           ELSE back_kb('ta:' || a.id, '🔙 تکلیف') END));
+
   WHEN 'edit_score' THEN
     SELECT s2.* INTO s FROM submissions s2 JOIN assignments a2 ON a2.id = s2.assignment_id
       JOIN classes c2 ON c2.id = a2.class_id WHERE s2.id = (d->>'sid')::int AND c2.teacher_id = u.id;
@@ -304,7 +329,7 @@ BEGIN
     SELECT * INTO c FROM classes WHERE classes.id = nid AND teacher_id = u.id AND NOT archived;
     IF c.id IS NULL OR NOT is_teacher(u) THEN RETURN jsonb_build_array(scr_denied(chat, mid)); END IF;
   END IF;
-  IF cmd IN ('ta','tsl','tar','tax','tak','tae','tal','taly','tarel') THEN
+  IF cmd IN ('ta','tsl','tar','tax','tak','tae','tal','taly','tarel','tan','tanf','tanx','targ','targy') THEN
     SELECT a2.* INTO a FROM assignments a2 JOIN classes c2 ON c2.id = a2.class_id
      WHERE a2.id = nid AND c2.teacher_id = u.id;
     IF a.id IS NULL OR NOT is_teacher(u) THEN RETURN jsonb_build_array(scr_denied(chat, mid)); END IF;
@@ -394,6 +419,9 @@ BEGIN
     IF arg = 'c' THEN d := d || jsonb_build_object('step', 'deadline_custom');
     ELSIF nid IS NOT NULL AND nid BETWEEN 1 AND 24*90 THEN d := d || jsonb_build_object('hours', nid, 'step', 'checklist');
     ELSE RETURN '[]'; END IF;
+  WHEN 'ak' THEN
+    IF u.state <> 'asg' OR d->>'step' <> 'answer' THEN RETURN jsonb_build_array(scr_main(u, chat, mid)); END IF;
+    d := (d - 'answer_text' - 'answer_file_id' - 'answer_kind' - 'answer_file_name' - 'answer_mime') || jsonb_build_object('step', 'confirm');
   WHEN 'cs' THEN
     RETURN jsonb_build_array(send(chat, E'📋 <b>نمونه چک‌لیست</b> — متن زیر را کپی کنید، تغییر دهید و بفرستید:\n\n<pre>' || h(checklist_sample()) || '</pre>' ||
       E'\n\n🔹 <b>[عدد]</b> = بارم هر معیار؛ خط بعد از معیار = توضیح همان معیار\n🔹 <b>نمره کل</b> اختیاری است (اگر با جمع بارم‌ها فرق کند، به آن تبدیل می‌شود)\n🔹 <b>قوانین</b> و <b>پاسخ نمونه</b> اختیاری‌اند و دقت نمره‌دهی را بالا می‌برند'));
@@ -414,10 +442,12 @@ BEGIN
       END IF;
       cl := parse_checklist(d->>'checklist_raw');
       INSERT INTO assignments(class_id, session_no, title, description, attach_file_id, attach_kind,
-                              checklist_raw, checklist, total_score, deadline)
+                              checklist_raw, checklist, total_score, deadline,
+                              answer_text, answer_file_id, answer_kind, answer_file_name, answer_mime)
       VALUES (c.id, (d->>'session')::int, d->>'title', d->>'desc', d->>'file_id', d->>'file_kind',
               d->>'checklist_raw', cl || jsonb_build_object('file_name', d->>'file_name', 'file_mime', d->>'file_mime'),
-              (cl->>'total')::numeric, now() + make_interval(secs => (d->>'hours')::numeric * 3600))
+              (cl->>'total')::numeric, now() + make_interval(secs => (d->>'hours')::numeric * 3600),
+              d->>'answer_text', d->>'answer_file_id', d->>'answer_kind', d->>'answer_file_name', d->>'answer_mime')
       RETURNING * INTO a;
       PERFORM set_state(u.id, NULL);
       acts := notify_new_asg(a.id);
@@ -428,13 +458,47 @@ BEGIN
     END IF;
 
   -- ---------------- teacher: assignment management
-  WHEN 'ta'  THEN RETURN jsonb_build_array(scr_t_asg(a, chat, mid));
+  WHEN 'ta'  THEN
+    IF u.state IN ('answer_edit','edit_score') THEN PERFORM set_state(u.id, NULL); END IF;
+    RETURN jsonb_build_array(scr_t_asg(a, chat, mid));
   WHEN 'tsl' THEN RETURN jsonb_build_array(scr_t_sub_list(a, chat, mid));
   WHEN 'tar' THEN
     RETURN jsonb_build_array(show(chat, mid, report_text(a.id),
       jsonb_build_array(jsonb_build_array(btn('📥 خروجی اکسل', 'tax:' || a.id), btn('🔙 تکلیف', 'ta:' || a.id)))));
   WHEN 'tax' THEN
     RETURN jsonb_build_array(act('_excel', jsonb_build_object('chat_id', chat, 'assignment_id', a.id)));
+  WHEN 'tan' THEN
+    PERFORM set_state(u.id, 'answer_edit', jsonb_build_object('aid', a.id));
+    RETURN jsonb_build_array(show(chat, mid, '🔑 <b>پاسخ‌نامه جلسه ' || fa(a.session_no::text) || E'</b>\n\n' ||
+      CASE WHEN has_answer(a) THEN
+        'وضعیت فعلی: ' || CASE WHEN a.answer_file_id IS NOT NULL THEN '📎 فایل ' ELSE '' END ||
+        CASE WHEN a.answer_text IS NOT NULL THEN E'\n<pre>' || h(trunc_text(a.answer_text, 1500)) || '</pre>' ELSE '' END ||
+        E'\n\nبرای <b>جایگزینی</b>، پاسخ‌نامه جدید رو بفرستید (متن، PDF/Word یا عکس).'
+      ELSE E'هنوز پاسخ‌نامه ندارد.\nجواب‌های درست رو بفرستید (متن، PDF/Word یا عکس) تا AI پاسخ دانشجوها رو با آن مقایسه کند.' END ||
+      E'\n🔒 دانشجوها پاسخ‌نامه را نمی‌بینند.',
+      CASE WHEN has_answer(a) THEN jsonb_build_array(
+             jsonb_build_array(btn('📎 دریافت فایل پاسخ‌نامه', 'tanf:' || a.id), btn('🗑 حذف پاسخ‌نامه', 'tanx:' || a.id)),
+             jsonb_build_array(btn('🔙 تکلیف', 'ta:' || a.id)))
+           ELSE back_kb('ta:' || a.id, '🔙 تکلیف') END));
+  WHEN 'tanf' THEN
+    IF a.answer_file_id IS NULL THEN RETURN jsonb_build_array(send(chat, 'پاسخ‌نامه فایل ندارد (فقط متن).')); END IF;
+    RETURN jsonb_build_array(act(CASE WHEN a.answer_kind = 'photo' THEN 'sendPhoto' ELSE 'sendDocument' END,
+             jsonb_build_object('chat_id', chat, CASE WHEN a.answer_kind = 'photo' THEN 'photo' ELSE 'document' END, a.answer_file_id,
+                                'caption', '🔑 پاسخ‌نامه جلسه ' || a.session_no)));
+  WHEN 'tanx' THEN
+    UPDATE assignments SET answer_text = NULL, answer_file_id = NULL, answer_kind = NULL, answer_file_name = NULL, answer_mime = NULL
+     WHERE assignments.id = a.id RETURNING * INTO a;
+    PERFORM set_state(u.id, NULL);
+    RETURN jsonb_build_array(scr_t_asg(a, chat, mid));
+  WHEN 'targ' THEN
+    RETURN jsonb_build_array(show(chat, mid, '🔄 همه‌ی ارسال‌های این تکلیف دوباره با چک‌لیست و پاسخ‌نامه‌ی فعلی نمره‌دهی شوند؟' ||
+      E'\nنمره‌های دستیِ شما هم با نمره‌ی جدید AI جایگزین می‌شود.',
+      jsonb_build_array(jsonb_build_array(btn('✅ بله', 'targy:' || a.id), btn('❌ نه', 'ta:' || a.id)))));
+  WHEN 'targy' THEN
+    UPDATE submissions SET status = 'pending', attempts = 0, last_error = NULL
+     WHERE assignment_id = a.id AND status IN ('graded','released','failed');
+    GET DIAGNOSTICS nid = ROW_COUNT;
+    RETURN jsonb_build_array(show(chat, mid, '🔄 ' || fa(nid::text) || ' ارسال در صف نمره‌دهی مجدد قرار گرفت. نتیجه‌ها مثل قبل برای شما می‌آید.', back_kb('ta:' || a.id)));
   WHEN 'tak' THEN
     RETURN jsonb_build_array(show(chat, mid, '📋 <b>چک‌لیست جلسه ' || fa(a.session_no::text) || E'</b>\n\n' || checklist_text(a.checklist) ||
       E'\n\n<b>متن اصلی:</b>\n<pre>' || h(trunc_text(a.checklist_raw, 2500)) || '</pre>', back_kb('ta:' || a.id)));
