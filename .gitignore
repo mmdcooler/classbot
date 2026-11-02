@@ -1,0 +1,6 @@
+.env
+postgres-data/
+n8n-data/
+__pycache__/
+*.pyc
+node_modules/
