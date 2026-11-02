@@ -116,3 +116,7 @@ ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_file_id   text;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_kind      text;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_file_name text;
 ALTER TABLE assignments ADD COLUMN IF NOT EXISTS answer_mime      text;
+
+-- v3: صبر و تلاش مجدد خودکار وقتی سرویس AI شلوغ است (خطای 429)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS retry_at   timestamptz;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS rate_hits  int NOT NULL DEFAULT 0;

@@ -495,7 +495,7 @@ BEGIN
       E'\nنمره‌های دستیِ شما هم با نمره‌ی جدید AI جایگزین می‌شود.',
       jsonb_build_array(jsonb_build_array(btn('✅ بله', 'targy:' || a.id), btn('❌ نه', 'ta:' || a.id)))));
   WHEN 'targy' THEN
-    UPDATE submissions SET status = 'pending', attempts = 0, last_error = NULL
+    UPDATE submissions SET status = 'pending', attempts = 0, last_error = NULL, retry_at = NULL, rate_hits = 0
      WHERE assignment_id = a.id AND status IN ('graded','released','failed');
     GET DIAGNOSTICS nid = ROW_COUNT;
     RETURN jsonb_build_array(show(chat, mid, '🔄 ' || fa(nid::text) || ' ارسال در صف نمره‌دهی مجدد قرار گرفت. نتیجه‌ها مثل قبل برای شما می‌آید.', back_kb('ta:' || a.id)));
@@ -546,7 +546,7 @@ BEGIN
     RETURN jsonb_build_array(send(chat, '✏️ نمره جدید را بفرستید (از ۰ تا ' ||
       fa((SELECT total_score FROM assignments WHERE assignments.id = s.assignment_id)) || '):', back_kb('tas:' || s.id, '❌ انصراف')));
   WHEN 'srg' THEN
-    UPDATE submissions SET status = 'pending', attempts = 0, last_error = NULL WHERE submissions.id = s.id AND status IN ('graded','released','failed');
+    UPDATE submissions SET status = 'pending', attempts = 0, last_error = NULL, retry_at = NULL, rate_hits = 0 WHERE submissions.id = s.id AND status IN ('graded','released','failed');
     RETURN jsonb_build_array(show(chat, mid, '🔄 ارسال در صف نمره‌دهی مجدد قرار گرفت. نتیجه تا چند دقیقه دیگر برای شما ارسال می‌شود.', back_kb('tsl:' || s.assignment_id)));
 
   -- ---------------- student

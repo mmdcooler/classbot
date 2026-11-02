@@ -10,6 +10,7 @@ BEGIN
     WITH picked AS (
       SELECT s.id FROM submissions s
        WHERE s.attempts < 3
+         AND (s.retry_at IS NULL OR s.retry_at <= now())
          AND (s.status = 'pending'
               OR (s.status = 'grading' AND s.grading_started_at < now() - interval '15 minutes'))
        ORDER BY s.submitted_at
@@ -56,7 +57,7 @@ BEGIN
   sc := least(greatest(coalesce((res->>'ai_score')::numeric, 0), 0), a.total_score);
   nr := coalesce((res->>'needs_review')::boolean, false);
   UPDATE submissions SET status = 'graded', ai_result = res, ai_score = sc, final_score = sc,
-         teacher_edited = false, needs_review = nr, graded_at = now(), last_error = NULL
+         teacher_edited = false, needs_review = nr, graded_at = now(), last_error = NULL, retry_at = NULL, rate_hits = 0
    WHERE id = s.id;
 
   IF c.auto_release AND NOT nr THEN
@@ -79,6 +80,13 @@ DECLARE s submissions; t users; card jsonb;
 BEGIN
   SELECT * INTO s FROM submissions WHERE id = sid FOR UPDATE;
   IF s.id IS NULL OR s.status <> 'grading' THEN RETURN '[]'; END IF;
+  -- AI busy / rate limited (429): not the student's fault -> wait and retry, don't burn an attempt
+  IF err ~* '(\m429\M|rate.?limit|too many requests|temporarily|overloaded|\m50[234]\M)' AND s.rate_hits < 20 THEN
+    UPDATE submissions SET status = 'pending', attempts = greatest(attempts - 1, 0), rate_hits = rate_hits + 1,
+           retry_at = now() + make_interval(mins => least(2 * (s.rate_hits + 1), 30)), last_error = left(err, 2000)
+     WHERE id = sid;
+    RETURN '[]';
+  END IF;
   IF s.attempts < 3 THEN
     UPDATE submissions SET status = 'pending', last_error = left(err, 2000) WHERE id = sid;
     RETURN '[]';

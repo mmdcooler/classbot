@@ -235,6 +235,19 @@ for i in range(3):
     acts = q("SELECT grading_fail(%s, %s)", j["submission_id"], "HTTP 500")[0][0]
 expect([("", "", " ".join(strip(a["payload"].get("text")) for a in acts), [])], "ناموفق بود", "failure after 3 attempts -> teacher")
 
+step("rate limit (429) -> wait & retry, no attempt burned")
+cb(TEACH, f"srg:{sid}")
+j = q("SELECT grading_claim(5)")[0][0]
+assert q("SELECT grading_fail(%s, %s)", j["submission_id"], 'AI request error: Request failed with status code 429')[0][0] == []
+st = q("SELECT status, attempts, rate_hits, retry_at > now() FROM submissions WHERE id=%s", sid)[0]
+assert st == ("pending", 0, 1, True), st
+assert q("SELECT count(*) FROM grading_claim(5)")[0][0] == 0, "must wait until retry_at"
+q("UPDATE submissions SET retry_at = now() - interval '1 second' WHERE id=%s", sid)
+j = q("SELECT grading_claim(5)")[0][0]
+q("SELECT grading_save(%s::jsonb)", json.dumps({**res, "submission_id": j["submission_id"]}))
+assert q("SELECT status IN ('graded','released'), rate_hits, retry_at FROM submissions WHERE id=%s", sid)[0] == (True, 0, None)
+print("  ✔ 429 backoff + recovery")
+
 step("scheduler: reminder + close")
 q("UPDATE assignments SET created_at = now() - interval '2 days', deadline = now() + interval '5 hours'")
 acts = q("SELECT scheduler_tick()")[0][0]
